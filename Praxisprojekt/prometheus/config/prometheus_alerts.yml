@@ -1,0 +1,41 @@
+groups:
+- name:  prometheus.rules
+  rules: 
+  - alert: PrometheusJobMissing
+    expr: absent(up{job="prometheus"})
+    for: 0m
+    labels:
+      severity: warning
+    annotations:
+      summary: Prometheus job missing (instance {{ $labels.instance }})
+      description: "A Prometheus job has disappeared\n  VALUE = {{ $value }}\n  LABELS = {{ $labels }}"
+
+  - alert: PrometheusConfigurationReloadFailure
+    expr: prometheus_config_last_reload_successful != 1
+    for: 0m
+    labels:
+      severity: warning
+    annotations:
+      summary: Prometheus configuration reload failure (instance {{ $labels.instance }})
+      description: "Prometheus configuration reload error\n  VALUE = {{ $value }}\n  LABELS = {{ $labels }}"
+
+
+  - alert: PrometheusTargetEmpty
+    expr: prometheus_sd_discovered_targets == 0
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: Prometheus target empty (instance {{ $labels.instance }})
+      description: "Prometheus has no target in service discovery\n  VALUE = {{ $value }}\n  LABELS = {{ $labels }}"      
+
+
+  - alert: PrometheusTargetScrapingSlow
+    expr: prometheus_target_interval_length_seconds{quantile="0.9"} > 60
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: Prometheus target scraping slow (instance {{ $labels.instance }})
+      description: "Prometheus is scraping exporters slowly\n  VALUE = {{ $value }}\n  LABELS = {{ $labels }}"
+

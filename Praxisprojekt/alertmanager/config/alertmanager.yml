@@ -1,0 +1,15 @@
+route:
+    group_by: [Alertname]
+    receiver: email
+
+receivers:
+    - name: email
+      email_configs:
+      - to: niklas.faulen@gmail.com
+        from: UniPrometheusAlert@gmail.com
+        smarthost: smtp.gmail.com:587
+        auth_username: UniPrometheusAlert@gmail.com
+        auth_identity: UniPrometheusAlert@gmail.com
+        auth_password: UniPrometheus
+        
+       

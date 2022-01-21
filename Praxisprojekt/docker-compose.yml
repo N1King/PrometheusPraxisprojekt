@@ -1,0 +1,213 @@
+version: '3.8'
+services:
+  # The /Customers API
+  customers:
+    build: customers-service
+    image: embair/swarm-demo:customers
+    environment:
+      - REDIS_HOST=customers_db
+    links:
+      - customers_db
+  customers_db:
+    image: redis
+    command: --port 6379
+    ports:
+      - "6379:6379"
+    deploy:
+     mode: replicated
+     replicas: 1
+     placement:
+      constraints:
+       - node.hostname == niklas-VirtualBox
+
+  # The /Products API
+  products:
+    build: products-service
+    image: n1king/praxisprojekt:products
+    environment:
+      - REDIS_HOST=products_db
+    links:
+      - products_db
+  products_db:
+    image: redis
+    command: --port 6380
+    ports: 
+      - "6380:6380"
+    deploy:
+     mode: replicated
+     replicas: 1
+     placement:
+      constraints:
+       - node.hostname == manager-VirtualBox
+
+  # The /Invoices API
+  invoices:
+    build: invoices-service
+    image: n1king/praxisprojekt:invoices
+    environment:
+      - REDIS_HOST=invoices_db
+      - CUSTOMERS_API=http://customers:8080
+      - PRODUCTS_API=http://products:8080
+    links:
+      - invoices_db
+  invoices_db:
+    image: redis
+    command: --port 6381
+    ports: 
+      - "6381:6381"
+    deploy:
+     mode: replicated
+     replicas: 1
+     placement:
+      constraints:
+       - node.hostname == worker-VirtualBox
+
+  # The Vue.js web application
+  webapp:
+    build: webapp
+    image: embair/swarm-demo:webapp
+
+  # The public gateway
+  api-gateway:
+    build: api-gateway
+    image: n1king/praxisprojekt:api-gateway3
+    ports:
+      - 80:80
+    links:
+      - customers
+      - products
+      - invoices
+      - webapp  
+    deploy:
+     placement:
+      constraints:
+       - node.hostname == worker-VirtualBox 
+
+  # Monitoring
+  
+  prometheus:
+   image: n1king/praxisprojekt:prometheusimage4
+   ports:
+    - 9090:9090
+   command:
+    - '--config.file=/etc/prometheus/prometheus.yml'
+   volumes:
+    - ./prometheus/config/:/etc/prometheus
+   configs:
+      - source: node_rules
+        target: /etc/prometheus/alert_rule.yml
+      - source: task_rules
+        target: /etc/prometheus/alert_tasks.yml
+      - source: prometheus_rules
+        target: /etc/prometheus/prometheus_alerts.yml
+   depends_on:
+    - cadvisor
+    - Alertmanager
+   restart: always
+   deploy: 
+    placement:
+     constraints:
+      - node.role == manager
+   
+     
+  cadvisor:
+   image: google/cadvisor
+   ports:
+   - 8080:8080
+   command: -logtostderr -docker_only   
+   volumes:
+   - /var/run/docker.sock:/var/run/docker.sock:ro
+   - /:/rootfs:ro
+   - /var/run:/var/run
+   - /sys:/sys:ro
+   - /var/lib/docker/:/var/lib/docker:ro
+   restart: always
+   deploy:
+    mode: global
+    
+  node-exporter:
+   image: n1king/praxisprojekt:nodeexportertest8
+   environment:
+     - NODE_ID={{.Node.ID}}
+   volumes:
+     - /proc:/host/proc:ro
+     - /sys:/host/sys:ro
+     - /:/rootfs:ro
+     - /etc/hostname:/etc/nodename
+   command:
+     - '--path.sysfs=/host/sys'
+     - '--path.procfs=/host/proc'
+     - '--collector.textfile.directory=/etc/node-exporter/'
+     - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)'
+     - '--no-collector.ipvs'
+   ports:
+     - 9100:9100
+   restart: always
+   deploy: 
+     mode: global
+     
+  grafana:
+   image: n1king/praxisprojekt:grafana
+   ports:
+    - 3000:3000
+   environment:
+    - GF_SECURITY_ADMIN_USER=${ADMIN_USER:-admin}
+    - GF_SECURITY_ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+   volumes:
+    - grafana:/var/lib/grafana
+   deploy:
+    mode: replicated
+    replicas: 1
+    placement:
+     constraints:
+      - node.role == manager
+      
+  alertmanager:
+   image: n1king/praxisprojekt:alertmanager
+   command:
+     - '--config.file=/etc/alertmanager/alertmanager.yml'
+     - '--storage.path=/alertmanager'
+   volumes:
+     - ./alertmanager/:/alertmanager
+   ports:
+    - 9093:9093
+   deploy:
+     mode: replicated
+     replicas: 1
+     placement:
+       constraints:
+         - node.role == manager
+      
+  redis:
+    image: oliver006/redis_exporter
+    ports:
+     - "9121:9121"
+    deploy:
+      mode: global
+    depends_on:
+      - customers_db
+      - invoices_db
+      - products_db
+  
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    ports:
+      - "9113:9113"
+    command:
+      - -nginx.scrape-uri
+      - http://10.10.10.1:80/metrics
+    depends_on:
+      - api-gateway
+      
+             
+configs:
+ node_rules:
+  file: ./prometheus/config/alert_rule.yml
+ task_rules:
+  file: ./prometheus/config/alert_tasks.yml
+ prometheus_rules:
+  file: ./prometheus/config/prometheus_alerts.yml
+volumes:
+    prometheus: {}
+    grafana: {}
+    alertmanager: {}
